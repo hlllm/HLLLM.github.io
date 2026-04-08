@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>商品管理</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;font-family:Microsoft YaHei}
+    header{background:#1677ff;color:white;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+    button{padding:8px 14px;border:none;border-radius:4px;cursor:pointer}
+    .green{background:#00b42a;color:white}
+    .red{background:#ff4d4f;color:white}
+    main{max-width:1300px;margin:20px auto;padding:0 20px}
+    .search-bar{margin-bottom:10px}
+    .search-bar input{padding:8px 12px;border:1px solid #ddd;border-radius:4px;width:280px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #ddd;padding:12px;text-align:center}
+    th{background:#f8f9fa}
+    img{width:60px;height:60px;object-fit:cover;border-radius:4px}
+    .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#00000066}
+    .modal-content{width:460px;background:white;margin:80px auto;padding:24px;border-radius:8px}
+    input,textarea{width:100%;margin:6px 0;padding:8px;border:1px solid #ddd;border-radius:4px}
+  </style>
+</head>
+<body>
+<header>
+  <h3>商品管理后台</h3>
+  <div>
+    <button class="green" onclick="addProduct()">添加商品</button>
+    <label class="blue" style="padding:8px 14px;cursor:pointer">
+      批量导入 CSV <input type="file" id="importFile" accept=".csv" style="display:none" onchange="importProducts()">
+    </label>
+    <button class="red" onclick="location.href='index.html'">退出</button>
+  </div>
+</header>
+<main>
+  <div class="search-bar">
+    <input placeholder="搜索商品" oninput="searchProducts()">
+  </div>
+  <table>
+    <tr><th>序号</th><th>图片</th><th>商品名称</th><th>编号</th><th>单价</th><th>操作</th></tr>
+    <tbody id="productList"></tbody>
+  </table>
+</main>
+
+<div class="modal" id="productModal">
+  <div class="modal-content">
+    <h3>商品信息</h3>
+    <input type="hidden" id="productId"><br>
+    <input placeholder="商品名称" id="productName" required><br>
+    <input placeholder="商品编号" id="productCode" required><br>
+    <input placeholder="单价" id="productPrice" required><br>
+    <input placeholder="图片链接（选填）" id="productImageUrl"><br>
+    <div style="margin:6px 0">
+      <label>或上传图片：</label>
+      <input type="file" id="productImageFile" accept="image/*">
+    </div>
+    <textarea placeholder="商品描述" id="productDesc" rows="3"></textarea><br>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeModal()">取消</button>
+      <button class="green" onclick="saveProduct()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let products = [];
+const API = 'http://localhost:3001';
+
+async function loadProducts(search = '') {
+  const res = await fetch(`${API}/api/products?search=${search}`);
+  products = await res.json();
+  renderTable();
+}
+
+function renderTable() {
+    const list = document.getElementById('productList');
+    list.innerHTML = '';
+    products.forEach((p, i) => {
+        let imgUrl = p.image_url || 'https://picsum.photos/60/60';
+        if (imgUrl.startsWith('/uploads')) imgUrl = API + imgUrl;
+        list.innerHTML += `
+            <tr>
+                <td>${i + 1}</td>
+                <td><img src="${imgUrl}" alt="${p.name}"></td>
+                <td>${p.name}</td>
+                <td>${p.code}</td>
+                <td>${p.price}</td>
+                <td>
+                    <button onclick="editProduct(${p.id})">编辑</button>
+                    <button onclick="deleteProduct(${p.id})">删除</button>
+                </td>
+            </tr>`;
+    });
+}
+
+
+function addProduct() {
+  document.getElementById('productId').value = '';
+  document.getElementById('productName').value = '';
+  document.getElementById('productCode').value = '';
+  document.getElementById('productPrice').value = '';
+  document.getElementById('productImageUrl').value = '';
+  document.getElementById('productDesc').value = '';
+  document.getElementById('productImageFile').value = '';
+  document.getElementById('productModal').style.display = 'block';
+}
+
+function editProduct(id) {
+  const p = products.find(x => x.id === id);
+  document.getElementById('productId').value = p.id;
+  document.getElementById('productName').value = p.name;
+  document.getElementById('productCode').value = p.code;
+  document.getElementById('productPrice').value = p.price;
+  document.getElementById('productImageUrl').value = p.image_url || '';
+  document.getElementById('productDesc').value = p.description || '';
+  document.getElementById('productImageFile').value = '';
+  document.getElementById('productModal').style.display = 'block';
+}
+
+function closeModal() {
+  document.getElementById('productModal').style.display = 'none';
+}
+
+async function saveProduct() {
+  const id = document.getElementById('productId').value;
+  const form = new FormData();
+  form.append('name', document.getElementById('productName').value);
+  form.append('code', document.getElementById('productCode').value);
+  form.append('price', document.getElementById('productPrice').value);
+  form.append('image_url', document.getElementById('productImageUrl').value);
+  form.append('description', document.getElementById('productDesc').value);
+  
+  const file = document.getElementById('productImageFile').files[0];
+  if (file) form.append('image', file);
+
+  const url = id ? `${API}/api/products/${id}` : `${API}/api/products`;
+  await fetch(url, { method: id ? 'PUT' : 'POST', body: form });
+  closeModal();
+  loadProducts();
+}
+
+async function deleteProduct(id) {
+  if (!confirm('确定删除？')) return;
+  await fetch(`${API}/api/products/${id}`, { method: 'DELETE' });
+  loadProducts();
+}
+
+async function importProducts() {
+  const file = document.getElementById('importFile').files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  await fetch(`${API}/api/products/import`, { method: 'POST', body: fd });
+  alert('导入成功');
+  loadProducts();
+}
+
+function searchProducts() {
+  const searchValue = document.querySelector('.search-bar input').value;
+  loadProducts(searchValue);
+}
+
+
+loadProducts();
+</script>
+</body>
+</html>
